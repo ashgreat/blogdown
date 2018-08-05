@@ -1,0 +1,73 @@
+---
+draft: yes
+title: 'p-Hacking: A Demonstration'
+author: Ashwin Malshe
+date: '2018-07-14'
+slug: p-hacking-a-demonstration
+categories: []
+tags: ['Statistics']
+header:
+  caption: ''
+  image: ''
+---
+
+<script src="/rmarkdown-libs/htmlwidgets/htmlwidgets.js"></script>
+<script src="/rmarkdown-libs/pymjs/pym.v1.js"></script>
+<script src="/rmarkdown-libs/widgetframe-binding/widgetframe.js"></script>
+
+
+<p>This note is a simple demonstration of p-hacking, which can be broadly described as the practice of reaching p &lt;= 0.05 by leveraging all the degrees of freedom researchers enjoy. <a href="http://andrewgelman.com/2017/05/10/p-hacking-intention-cheat-effect/">As an aside, not everyone likes the name p-hacking!</a></p>
+<p>For this demonstration, I am going to show you how not deciding sample size ex ante and continuing data collection until one obtains statistically significant results can be wrong. Consider an experimental researcher who starts with a sample size (more accurately cell size) of 30. However, they don’t find statistically significant results in the first experiment. So they increase the sample size to 60 in the next study and get a p &lt; 0.05.</p>
+<p>That’s awesome, isn’t it? The problem with this apprach is that there is no scientific basis for picking the sample size. Why did the researcher stop at 60? What if they had increased the sample size to 90? Would they get statistically significant results? In other words, if we get a statistically significant result at a specific sample size does that guarantee that a higher sample size will also lead to statistically significant result?</p>
+<p>As I show below the answer to the last question is no. For this example, I am going to create a vector of 501 values with the following data generating process (dgp):</p>
+<p><span class="math display">\[x_i \sim N(\mu = 1, \sigma = 9)   \]</span></p>
+<p>A few of my friends pointed out that the standard error is really large compared to the mean. I agree but I am using extreme values to make my point more salient.</p>
+<p>Next, I perform a series of t-tests on this vector to test the null hypothesis that the population mean is zero. Note that our dgp tells us that the population mean is 1 so the t-test should reject the null hypothesis.</p>
+<p>I first use a sample of first two values from the vector, perform a t-test, and record the p-value. I keep on increasing the sample size by 1 unit until I exhaust the vector. This results in a drawing of 500 samples from the vector and corresponding 500 p-values.</p>
+<p>The R code that generated these numbers is as follows:</p>
+<pre class="r"><code>
+# Set the random number seed for replicability
+set.seed(4521)
+
+# Create a vector of 501 values
+r1 = rnorm(501,1,9)
+
+# Create an empty data frame before the loop
+d31 = data.frame(sample = NA, p_val = NA)
+
+# Write a loop to iteratively draw samples of increasing sample size, perform t-test, and get the p-value
+for(i in 2:501){
+  d31[i-1,2] = round(t.test(r1[1:i],mu=0)$p.value,3)
+  d31[i-1,1] = i
+}
+
+# Note the p-values are rounded to 3rd decimal place for better visualization.</code></pre>
+<p>I used <code>highcharter</code> package in R to make a nice graph:</p>
+<pre class="r"><code>hc1 = hchart(d31, &quot;line&quot;, lineWidth = 1,hcaes(x = sample, y = p_val)) %&gt;%
+  hc_xAxis(title = list(text = &quot;Number of Observations in the Sample&quot;)) %&gt;%
+  hc_yAxis(title = list(text = &quot;p-value&quot;),
+           plotLines = list(
+             list(label = list(text = &quot;p-value = 0.05&quot;,
+                               align = &quot;right&quot;, x = -10),
+                  color = &quot;#FF0000&quot;,
+                  width = 1,
+                  value = 0.05))) %&gt;%
+  hc_add_theme(hc_theme_flat()) %&gt;%
+  hc_colors(cols) %&gt;%
+  hc_exporting(enabled = TRUE)
+frameWidget(hc1, height = &#39;400&#39;)</code></pre>
+<div id="htmlwidget-1" style="width:100%;height:400px;" class="widgetframe html-widget"></div>
+<script type="application/json" data-for="htmlwidget-1">{"x":{"url":"/post/2018-07-14-p-hacking-a-demonstration_files/figure-html//widgets/widget_unnamed-chunk-2.html","options":{"xdomain":"*","allowfullscreen":false,"lazyload":false}},"evals":[],"jsHooks":[]}</script>
+<p><br> <br> If you hover your mouse on the series, you will be able to read the exact points.</p>
+<p>In this case we obtain desired 5% statistical significance only at a sample size of 163. After that point, the p-value goes down. However, it goes back up when the sample size is 185! p-value is 0.051 even at a sample size of 288. The takeaway from this exercise is that p-value is not monotonically decreasing as the sample size increases. Thus, when researchers keep collecting data until they reach statistical significance, it might just be a spurious result. If they didn’t stop and instead collected more data, they might have hit statistical non significance as in the above example.</p>
+<p>Below, I generate similar graphs for 6 random number seeds to demonstrate that p-values don’t always decrease monotonically with increasing sample size.</p>
+<div id="htmlwidget-2" style="width:100%;height:400px;" class="widgetframe html-widget"></div>
+<script type="application/json" data-for="htmlwidget-2">{"x":{"url":"/post/2018-07-14-p-hacking-a-demonstration_files/figure-html//widgets/widget_unnamed-chunk-4.html","options":{"xdomain":"*","allowfullscreen":false,"lazyload":false}},"evals":[],"jsHooks":[]}</script>
+<div id="htmlwidget-3" style="width:100%;height:400px;" class="widgetframe html-widget"></div>
+<script type="application/json" data-for="htmlwidget-3">{"x":{"url":"/post/2018-07-14-p-hacking-a-demonstration_files/figure-html//widgets/widget_unnamed-chunk-5.html","options":{"xdomain":"*","allowfullscreen":false,"lazyload":false}},"evals":[],"jsHooks":[]}</script>
+<div id="htmlwidget-4" style="width:100%;height:400px;" class="widgetframe html-widget"></div>
+<script type="application/json" data-for="htmlwidget-4">{"x":{"url":"/post/2018-07-14-p-hacking-a-demonstration_files/figure-html//widgets/widget_unnamed-chunk-6.html","options":{"xdomain":"*","allowfullscreen":false,"lazyload":false}},"evals":[],"jsHooks":[]}</script>
+<div id="htmlwidget-5" style="width:100%;height:400px;" class="widgetframe html-widget"></div>
+<script type="application/json" data-for="htmlwidget-5">{"x":{"url":"/post/2018-07-14-p-hacking-a-demonstration_files/figure-html//widgets/widget_unnamed-chunk-7.html","options":{"xdomain":"*","allowfullscreen":false,"lazyload":false}},"evals":[],"jsHooks":[]}</script>
+<div id="htmlwidget-6" style="width:100%;height:400px;" class="widgetframe html-widget"></div>
+<script type="application/json" data-for="htmlwidget-6">{"x":{"url":"/post/2018-07-14-p-hacking-a-demonstration_files/figure-html//widgets/widget_unnamed-chunk-8.html","options":{"xdomain":"*","allowfullscreen":false,"lazyload":false}},"evals":[],"jsHooks":[]}</script>

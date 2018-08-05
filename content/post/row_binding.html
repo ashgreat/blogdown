@@ -1,0 +1,144 @@
+---
+draft: yes
+title: "Speed comparison of rbind, bind_rows, and rbindlist"
+author: "Ashwin Malshé"
+date: "2018-07-23"
+slug: speed-comparison-rbind
+categories: []
+tags: ['R Coding']
+header:
+  caption: ''
+  image: ''
+---
+
+<script src="/rmarkdown-libs/htmlwidgets/htmlwidgets.js"></script>
+<script src="/rmarkdown-libs/pymjs/pym.v1.js"></script>
+<script src="/rmarkdown-libs/widgetframe-binding/widgetframe.js"></script>
+
+
+<p>I often need to create a list consisting of several data frames. A simple example is when you read an Excel file with multiple worksheets. Rather than reading the sheets one at a time and row binding them as you go, it’s often faster to read all the sheets into a list as separate data frames and then row bind them all at once. Another example is when you are storing data frames as they are returned by a website such as Facebook. Again, it’s much more efficient to store all these data frames in a list and then row bind them.</p>
+<p>There are three popular ways of binding data frames stored in a list.</p>
+<ol style="list-style-type: decimal">
+<li>Use <code>rbind()</code> from base R</li>
+<li>Use <code>bind_rows()</code> from <code>dplyr</code> package</li>
+<li>Use <code>rbindlist()</code> from <code>data.table</code> package</li>
+</ol>
+<p>In this post, I compare the performance of each of these three methods. The criterion is the time taken to row bind 10 data frames, each with 2 million rows and 10 columns. Rather doing this simulation only once, I use <code>microbenchmark</code> package and get a distribution of execution times for each method over 100 trials. As many before me have documented, I also find that <code>rbindlist()</code> is the fastest method and <code>rbind()</code> is the slowest. <code>bind_rows()</code> is half as fast as <code>rbindlist()</code>.</p>
+<p>I am going to do this in 3 steps. In step 1, I will generate a list with 10 data frames. In step 2, I will get the execution times. Finally, in step 3, I will report the diagnostics including histograms (plotted using <code>highcharter</code>).</p>
+<pre class="r"><code>library(data.table)
+library(dplyr)
+library(purrr) # For map() function
+library(microbenchmark) # For benchmarking
+library(highcharter) # For interactive histograms</code></pre>
+<div id="step-1-create-a-list-of-10-data-frames" class="section level2">
+<h2>Step 1: Create a list of 10 data frames</h2>
+<p>First, create a vector specifying length of each of 10 numeric vectors. I fix it at 20 million elements.</p>
+<pre class="r"><code>dfs &lt;- rep(2e7,10)</code></pre>
+<p>Next, create a list of 10 data frames. I create a data frame by first creating a vector of 20 million numbers, converting into a matrix of 2 million rows and 10 columns, and finally converting it into a data frame.</p>
+<pre class="r"><code>set.seed(123456) # Random number seed for replication
+myList &lt;- map(dfs,
+              base::sample,
+              x = 1:1e5,
+              replace = TRUE) %&gt;%
+  map(matrix,
+      ncol = 10) %&gt;%
+  map(data.frame)</code></pre>
+<p>The list ‘myList’ now has 10 data frames, each with the same 10 variables (x1-x10) and 2 million observations.</p>
+<p>Check the class of myList and each object inside it.</p>
+<pre class="r"><code>class(myList)</code></pre>
+<pre><code>## [1] &quot;list&quot;</code></pre>
+<pre class="r"><code>myList %&gt;% map_chr(class)</code></pre>
+<pre><code>##  [1] &quot;data.frame&quot; &quot;data.frame&quot; &quot;data.frame&quot; &quot;data.frame&quot; &quot;data.frame&quot;
+##  [6] &quot;data.frame&quot; &quot;data.frame&quot; &quot;data.frame&quot; &quot;data.frame&quot; &quot;data.frame&quot;</code></pre>
+<p>Check the column names of each data frame.</p>
+<pre class="r"><code>myList %&gt;% map(colnames)</code></pre>
+<pre><code>## [[1]]
+##  [1] &quot;X1&quot;  &quot;X2&quot;  &quot;X3&quot;  &quot;X4&quot;  &quot;X5&quot;  &quot;X6&quot;  &quot;X7&quot;  &quot;X8&quot;  &quot;X9&quot;  &quot;X10&quot;
+## 
+## [[2]]
+##  [1] &quot;X1&quot;  &quot;X2&quot;  &quot;X3&quot;  &quot;X4&quot;  &quot;X5&quot;  &quot;X6&quot;  &quot;X7&quot;  &quot;X8&quot;  &quot;X9&quot;  &quot;X10&quot;
+## 
+## [[3]]
+##  [1] &quot;X1&quot;  &quot;X2&quot;  &quot;X3&quot;  &quot;X4&quot;  &quot;X5&quot;  &quot;X6&quot;  &quot;X7&quot;  &quot;X8&quot;  &quot;X9&quot;  &quot;X10&quot;
+## 
+## [[4]]
+##  [1] &quot;X1&quot;  &quot;X2&quot;  &quot;X3&quot;  &quot;X4&quot;  &quot;X5&quot;  &quot;X6&quot;  &quot;X7&quot;  &quot;X8&quot;  &quot;X9&quot;  &quot;X10&quot;
+## 
+## [[5]]
+##  [1] &quot;X1&quot;  &quot;X2&quot;  &quot;X3&quot;  &quot;X4&quot;  &quot;X5&quot;  &quot;X6&quot;  &quot;X7&quot;  &quot;X8&quot;  &quot;X9&quot;  &quot;X10&quot;
+## 
+## [[6]]
+##  [1] &quot;X1&quot;  &quot;X2&quot;  &quot;X3&quot;  &quot;X4&quot;  &quot;X5&quot;  &quot;X6&quot;  &quot;X7&quot;  &quot;X8&quot;  &quot;X9&quot;  &quot;X10&quot;
+## 
+## [[7]]
+##  [1] &quot;X1&quot;  &quot;X2&quot;  &quot;X3&quot;  &quot;X4&quot;  &quot;X5&quot;  &quot;X6&quot;  &quot;X7&quot;  &quot;X8&quot;  &quot;X9&quot;  &quot;X10&quot;
+## 
+## [[8]]
+##  [1] &quot;X1&quot;  &quot;X2&quot;  &quot;X3&quot;  &quot;X4&quot;  &quot;X5&quot;  &quot;X6&quot;  &quot;X7&quot;  &quot;X8&quot;  &quot;X9&quot;  &quot;X10&quot;
+## 
+## [[9]]
+##  [1] &quot;X1&quot;  &quot;X2&quot;  &quot;X3&quot;  &quot;X4&quot;  &quot;X5&quot;  &quot;X6&quot;  &quot;X7&quot;  &quot;X8&quot;  &quot;X9&quot;  &quot;X10&quot;
+## 
+## [[10]]
+##  [1] &quot;X1&quot;  &quot;X2&quot;  &quot;X3&quot;  &quot;X4&quot;  &quot;X5&quot;  &quot;X6&quot;  &quot;X7&quot;  &quot;X8&quot;  &quot;X9&quot;  &quot;X10&quot;</code></pre>
+<p>This is a significantly large list with 763 Mb memory footprint</p>
+<pre class="r"><code>print(object.size(myList), units = &#39;Mb&#39;)</code></pre>
+<pre><code>## 763 Mb</code></pre>
+</div>
+<div id="step-2-row-bind-10-data-frames-from-mylist" class="section level2">
+<h2>Step 2: Row bind 10 data frames from <code>myList</code></h2>
+<p>Now we are set to check the time required to create a single data frame. I will compare base R, <code>dplyr</code>, and <code>data.table</code> implementations. Before we do that, however, let’s make sure that the three functions generate identical values.</p>
+<pre class="r"><code># Base R
+df1 = do.call(&quot;rbind&quot;, myList)
+# dplyr
+df2 = dplyr::bind_rows(myList)
+# data.table
+df3 = data.table::rbindlist(myList)
+
+identical(df1,df2)</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+<pre class="r"><code>identical(df2,as.data.frame(df3))</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+<p>Now that we know that we have the same tables after row binding, we can perform benchmarking. I am using <code>microbenchmark</code> package to determine the time taken for completing this task. Each expression will be executed 100 times so that we get a distribution of execution times.</p>
+<pre class="r"><code>time1 &lt;- microbenchmark(do.call(&quot;rbind&quot;, myList),
+                        times = 100L)
+time2 &lt;- microbenchmark(dplyr::bind_rows(myList),
+                        times = 100L)
+time3 &lt;- microbenchmark(data.table::rbindlist(myList),
+                        times = 100L)</code></pre>
+</div>
+<div id="step-3-study-the-results-of-benchmarking" class="section level2">
+<h2>Step 3: Study the results of benchmarking</h2>
+<p>Let’s take a look at thes distributions of execution times.</p>
+<pre class="r"><code># base R execution time
+time1</code></pre>
+<pre><code>## Unit: seconds
+##                      expr      min       lq     mean   median       uq
+##  do.call(&quot;rbind&quot;, myList) 4.245134 4.765259 5.358162 5.025859 5.709904
+##       max neval
+##  8.966793   100</code></pre>
+<pre class="r"><code># dplyr execution time
+time2</code></pre>
+<pre><code>## Unit: milliseconds
+##                      expr      min       lq     mean  median       uq
+##  dplyr::bind_rows(myList) 788.6494 917.6579 1050.262 1056.91 1135.933
+##       max neval
+##  1750.215   100</code></pre>
+<pre class="r"><code># data.table execution time
+time3</code></pre>
+<pre><code>## Unit: milliseconds
+##                           expr      min       lq     mean   median
+##  data.table::rbindlist(myList) 209.0629 251.1841 428.0212 474.9053
+##        uq    max neval
+##  537.8972 824.99   100</code></pre>
+<p>Clearly, <code>rbindlist</code> from <code>data.table</code> is the fastest with average execution time 428 milliseconds. It’s more than twice faster than <code>bind_rows</code> from <code>dplyr</code>, which took an average of 1,050 milliseconds, and more than 10 times faster than <code>rbind</code> from base R, which took an average of 5,358 milliseconds! There are certainly a few extreme values in all 3 simulations but the medians are close to the means, suggesting small influence of extreme values.</p>
+<p>I plot the distributions using <code>highcharter</code>. <code>Microbenchmark</code> measures all the times in nanoseconds. We may not need this precision so I convert everything into milliseconds.</p>
+<p>You can download the data underlying these plots by clicking on the top right corner in the plots.</p>
+<div id="htmlwidget-1" style="width:100%;height:400px;" class="widgetframe html-widget"></div>
+<script type="application/json" data-for="htmlwidget-1">{"x":{"url":"/post/row_binding_files/figure-html//widgets/widget_unnamed-chunk-11.html","options":{"xdomain":"*","allowfullscreen":false,"lazyload":false}},"evals":[],"jsHooks":[]}</script>
+<div id="htmlwidget-2" style="width:100%;height:400px;" class="widgetframe html-widget"></div>
+<script type="application/json" data-for="htmlwidget-2">{"x":{"url":"/post/row_binding_files/figure-html//widgets/widget_unnamed-chunk-12.html","options":{"xdomain":"*","allowfullscreen":false,"lazyload":false}},"evals":[],"jsHooks":[]}</script>
+<div id="htmlwidget-3" style="width:100%;height:400px;" class="widgetframe html-widget"></div>
+<script type="application/json" data-for="htmlwidget-3">{"x":{"url":"/post/row_binding_files/figure-html//widgets/widget_unnamed-chunk-13.html","options":{"xdomain":"*","allowfullscreen":false,"lazyload":false}},"evals":[],"jsHooks":[]}</script>
+<p>You can hover the mouse on each bar to see the height. There are a lot of interesting things in these distributions. For example, in the <code>rbindlist()</code> distrbution, about 33% of execution times were less than 300 milliseconds.</p>
+</div>

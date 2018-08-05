@@ -1,0 +1,190 @@
+---
+title: "Speed comparison of rbind, bind_rows, and rbindlist"
+author: "Ashwin Malshé"
+date: "2018-07-23"
+slug: speed-comparison-rbind
+categories: []
+tags: ['R Coding']
+header:
+  caption: ''
+  image: ''
+---
+
+
+```{r setup, include=FALSE,warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(dplyr)
+library(purrr)
+library(microbenchmark)
+library(highcharter)
+library(widgetframe)
+```
+
+I often need to create a list consisting of several data frames. A simple example is when you read an Excel file with multiple worksheets. Rather than reading the sheets one at a time and row binding them as you go, it's often faster to read all the sheets into a list as separate data frames and then row bind them all at once. Another example is when you are storing data frames as they are returned by a website such as Facebook. Again, it's much more efficient to store all these data frames in a list and then row bind them.
+
+There are three popular ways of binding data frames stored in a list.
+
+1. Use `rbind()` from base R
+2. Use `bind_rows()` from `dplyr` package
+3. Use `rbindlist()` from `data.table` package
+
+In this post, I compare the performance of each of these three methods. The criterion is the time taken to row bind 10 data frames, each with 2 million rows and 10 columns. Rather doing this simulation only once, I use `microbenchmark` package and get a distribution of execution times for each method over 100 trials. As many before me have documented, I also find that `rbindlist()` is the fastest method and `rbind()` is the slowest. `bind_rows()` is half as fast as `rbindlist()`. 
+
+
+I am going to do this in 3 steps. In step 1, I will generate a list with 10 data frames. In step 2, I will get the execution times. Finally, in step 3, I will report the diagnostics including histograms (plotted using `highcharter`).
+
+
+```{r eval=FALSE}
+library(data.table)
+library(dplyr)
+library(purrr) # For map() function
+library(microbenchmark) # For benchmarking
+library(highcharter) # For interactive histograms
+
+```
+
+
+## Step 1: Create a list of 10 data frames
+
+First, create a vector specifying length of each of 10 numeric vectors. I fix it at 20 million elements.
+
+```{r}
+dfs <- rep(2e7,10)
+```
+
+
+Next, create a list of 10 data frames. I create a data frame by first creating a vector of 20 million numbers, converting into a matrix of 2 million rows and 10 columns, and finally converting it into a data frame.
+
+```{r}
+set.seed(123456) # Random number seed for replication
+myList <- map(dfs,
+              base::sample,
+              x = 1:1e5,
+              replace = TRUE) %>%
+  map(matrix,
+      ncol = 10) %>%
+  map(data.frame)
+
+```
+
+The list 'myList' now has 10 data frames, each with the same 10 variables (x1-x10) and 2 million observations.
+
+Check the class of myList and each object inside it.
+
+```{r}
+class(myList)
+myList %>% map_chr(class)
+```
+
+
+Check the column  names of each data frame.
+```{r}
+myList %>% map(colnames)
+```
+
+This is a significantly large list with 763 Mb memory footprint
+
+```{r}
+print(object.size(myList), units = 'Mb')
+```
+
+
+## Step 2: Row bind 10 data frames from `myList`
+
+Now we are set to check the time required to create a single data frame. I will compare base R, `dplyr`, and `data.table` implementations. Before we do that, however, let's make sure that the three functions generate identical values. 
+
+```{r}
+# Base R
+df1 = do.call("rbind", myList)
+# dplyr
+df2 = dplyr::bind_rows(myList)
+# data.table
+df3 = data.table::rbindlist(myList)
+
+identical(df1,df2)
+identical(df2,as.data.frame(df3))
+
+```
+
+Now that we know that we have the same tables after row binding, we can perform benchmarking. I am using `microbenchmark` package to determine the time taken for completing this task. Each expression will be executed 100 times so that we get a distribution of execution times.
+
+```{r eval=FALSE}
+time1 <- microbenchmark(do.call("rbind", myList),
+                        times = 100L)
+time2 <- microbenchmark(dplyr::bind_rows(myList),
+                        times = 100L)
+time3 <- microbenchmark(data.table::rbindlist(myList),
+                        times = 100L)
+```
+
+```{r echo=FALSE}
+# Import the data sets that I created already to save time
+time1 = readRDS(here::here("content/post/baseRtime.RDS"))
+time2 = readRDS(here::here("content/post/dplyrtime.RDS"))
+time3 = readRDS(here::here("content/post/datatabletime.RDS"))
+
+```
+
+## Step 3: Study the results of benchmarking
+
+Let's take a look at thes distributions of execution times.
+
+```{r}
+# base R execution time
+time1
+# dplyr execution time
+time2
+# data.table execution time
+time3
+```
+
+Clearly, `rbindlist` from `data.table` is the fastest with average execution time 428 milliseconds. It's more than twice faster than `bind_rows` from `dplyr`, which took an average of 1,050 milliseconds, and more than 10 times faster than `rbind` from base R, which took an average of 5,358 milliseconds! There are certainly a few extreme values in all 3 simulations but the medians are close to the means, suggesting small influence of extreme values.
+
+I plot the distributions using `highcharter`. `Microbenchmark` measures all the times in nanoseconds. We may not need this precision so I convert everything into milliseconds.
+
+You can download the data underlying these plots by clicking on the top right corner in the plots.
+
+```{r echo=FALSE}
+time1 %>%
+  select(time) %>%
+  mutate(time = round(time/1e6,3)) %>%
+  {hist(.$time,plot = FALSE)} %>%
+  hchart(name = 'Execution in Milliseconds') %>%
+  hc_yAxis(title = list(text = 'Count')) %>%
+  hc_title(text = 'Base R rbind() 100 simulations') %>%
+  hc_add_theme(hc_theme_538()) %>%
+  hc_exporting(enabled = TRUE,
+               filename = "ExecutionTime_rbind") %>%
+  frameWidget(height = 400)
+```
+
+```{r echo=FALSE}
+time2 %>%
+  select(time ) %>%
+  mutate(time = round(time/1e6,3)) %>%
+  {hist(.$time,plot = FALSE)} %>%
+  hchart(name = 'Execution in Milliseconds') %>%
+  hc_yAxis(title = list(text = 'Count')) %>%
+  hc_title(text = 'dplyr bind_rows() 100 simulations') %>%
+  hc_add_theme(hc_theme_538()) %>%
+  hc_exporting(enabled = TRUE,
+               filename = "ExecutionTime_bind_rows") %>%
+  frameWidget(height = 400)
+```
+
+```{r echo=FALSE}
+time3 %>%
+  select(time ) %>%
+  mutate(time = round(time/1e6,3)) %>%
+  {hist(.$time,plot = FALSE)} %>%
+  hchart(name = 'Execution in Milliseconds') %>%
+  hc_yAxis(title = list(text = 'Count')) %>%
+  hc_title(text = 'data.table rbindlist() 100 simulations') %>%
+  hc_add_theme(hc_theme_538()) %>%
+  hc_exporting(enabled = TRUE,
+               filename = "ExecutionTime_rbindlist") %>%
+  frameWidget(height = 400)
+```
+
+You can hover the mouse on each bar to see the height. There are a lot of interesting things in these distributions. For example, in the `rbindlist()` distrbution, about 33% of execution times were less than 300 milliseconds.
